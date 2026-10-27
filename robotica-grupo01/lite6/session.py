@@ -19,10 +19,10 @@ def safe_session():
 
     # Reduced-mode caps: 150 mm/s TCP, 54 deg/s joints
     arm.set_reduced_max_tcp_speed(config.get('max_joint_speed'))
-    arm.set_reduced_max_joint_speed(config.get('max_tcp_speed'), is_radian=False)
+    arm.set_reduced_max_joint_speed(config.get('max_tcp_speed'))
 
     # TCP fence: [x_max, x_min, y_max, y_min, z_max, z_min] in mm
-    arm.set_reduced_tcp_boundary([300, 70, 200, -200, 400, 10])
+    arm.set_reduced_tcp_boundary(config.get('tcp_boundaries'))
     arm.set_fence_mode(True)
     arm.set_reduced_mode(True)
 

@@ -1,3 +1,4 @@
 ip: '192.168.1.182'
 max_joint_speed: 54
 max_tcp_speed: 150
+tcp_boundaries: [300, 70, 200, -200, 400, 10]
