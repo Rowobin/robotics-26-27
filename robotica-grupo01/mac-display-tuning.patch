@@ -1,0 +1,66 @@
+diff --git a/.env.example b/.env.example
+index edc4403..d4fdcfa 100644
+--- a/.env.example
++++ b/.env.example
+@@ -25,7 +25,7 @@ LAB_GAZEBO=1
+ #         Works for RViz; Gazebo is usually happier on vnc.
+ #   none  headless
+ DISPLAY_MODE=vnc
+-VNC_RESOLUTION=1600x900
++VNC_RESOLUTION=1280x720
+ 
+ # --- Rendering ---------------------------------------------------------------
+ # Docker on macOS gives the container no GPU, so Mesa's software rasteriser is
+diff --git a/README.md b/README.md
+index d80abe8..4f8e6ea 100644
+--- a/README.md
++++ b/README.md
+@@ -259,6 +259,22 @@ GPU. RViz is comfortable, Gazebo is slow but usable (Apple Silicon handles it
+ better than most laptops). That is the expected Path C experience; say so when
+ you submit if it is unusable.
+ 
++### Moving the camera in Gazebo (in the browser)
++
++Gazebo's camera uses three mouse buttons: **left-drag pans, middle-drag orbits,
++right-drag or the scroll wheel zooms.** A trackpad has no middle button, and
++its two-finger scroll arrives as many tiny steps, so zooming can feel stuck.
++
++- Zoom: scroll with two fingers, slowly, and wait a moment — Gazebo only moves
++  the camera on the frames it manages to draw. Do **not** pinch; that zooms the
++  browser page, not Gazebo.
++- Try Firefox if Safari or Chrome scrolls too fast or not at all.
++- A plain USB mouse with a wheel and a middle button makes Gazebo much easier;
++  worth it for the sessions that use Gazebo.
++- If it is slow rather than stuck, lower `VNC_RESOLUTION` in `.env` (for example
++  `1024x576`), then `./lab.sh restart`, and give Docker Desktop more CPUs
++  (Settings → Resources).
++
+ ---
+ 
+ ## Where your work lives
+diff --git a/docker-compose.yml b/docker-compose.yml
+index ec299c1..a9274cd 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -42,7 +42,7 @@ services:
+       LAB_GAZEBO: ${LAB_GAZEBO:-1}
+       # --- display: vnc | x11 | none   (vnc is the Mac default) --------------------------
+       DISPLAY_MODE: ${DISPLAY_MODE:-vnc}
+-      VNC_RESOLUTION: ${VNC_RESOLUTION:-1600x900}
++      VNC_RESOLUTION: ${VNC_RESOLUTION:-1280x720}
+       # --- rendering: Docker on macOS has no GPU passthrough, so software Mesa -----------
+       LIBGL_ALWAYS_SOFTWARE: ${LIBGL_ALWAYS_SOFTWARE:-1}
+       # --- misc -------------------------------------------------------------
+diff --git a/docker/start-display b/docker/start-display
+index 0edf054..7290155 100644
+--- a/docker/start-display
++++ b/docker/start-display
+@@ -17,7 +17,7 @@
+ set -o pipefail
+ 
+ MODE="${DISPLAY_MODE:-auto}"
+-VNC_RESOLUTION="${VNC_RESOLUTION:-1600x900}"
++VNC_RESOLUTION="${VNC_RESOLUTION:-1280x720}"
+ VNC_DISPLAY="${VNC_DISPLAY:-:99}"
+ 
+ log() { echo "[display] $*"; }

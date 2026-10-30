@@ -1,5 +1,3 @@
-# uv run python -m scripts.connect
-
 from lite6 import session
 
 from xarm.wrapper import XArmAPI

@@ -1,0 +1,472 @@
+#!/usr/bin/env bash
+###############################################################################
+# `lab` - the shortcuts for Lab 0 of Robotics (02000537).
+#
+# Nothing here is magic: every command prints the real ros2/colcon line it is
+# about to run, so you can copy it, change it, or paste it into a bug report.
+###############################################################################
+set -o pipefail
+
+# `docker exec <container> lab ...` runs this script directly: no login shell,
+# no ~/.bashrc, so none of the ROS setup has happened. An interactive
+# `./lab.sh shell` does read ~/.bashrc, which is why this only bites the
+# non-interactive path (`./lab.sh doctor`, `./lab.sh run ...`). Source it here so
+# `lab` behaves the same however it was invoked.
+if [ -z "${ROS_DISTRO:-}" ] && [ -f /etc/profile.d/10-ros-lab.sh ]; then
+    unset LAB_ROS_SETUP_DONE
+    source /etc/profile.d/10-ros-lab.sh
+fi
+
+GAZEBO_STATE_FILE="${HOME}/.ros/lab-gazebo"
+DEFAULT_BASE_FRAME="link_base"
+DEFAULT_EEF_FRAME="link_eef"
+
+# --- pretty ------------------------------------------------------------------
+if [ -t 1 ]; then
+    B=$'\033[1m'; R=$'\033[0m'; Y=$'\033[33m'; G=$'\033[32m'; E=$'\033[31m'
+else
+    B=''; R=''; Y=''; G=''; E=''
+fi
+say()  { echo "${B}==>${R} $*"; }
+warn() { echo "${Y}!!${R} $*" >&2; }
+die()  { echo "${E}!!${R} $*" >&2; exit 1; }
+
+# Print the command, then run it.
+run() {
+    echo "${B}\$${R} $*"
+    echo
+    "$@"
+}
+
+# --- the Gazebo switch -------------------------------------------------------
+# Precedence:  `lab gazebo on|off` (state file)  >  LAB_GAZEBO in .env  >  on
+gazebo_enabled() {
+    if [ -f "${GAZEBO_STATE_FILE}" ]; then
+        [ "$(cat "${GAZEBO_STATE_FILE}")" = "1" ]
+    else
+        [ "${LAB_GAZEBO:-1}" != "0" ]
+    fi
+}
+
+require_gazebo() {
+    if ! gazebo_enabled; then
+        cat >&2 <<MSG
+${E}Gazebo is switched OFF.${R}
+
+  '$1' starts a physics simulation, which is exactly the CPU load you asked
+  not to have. Nothing was started.
+
+  Turn it on for this session:      lab gazebo on
+  Turn it on permanently:           set LAB_GAZEBO=1 in .env on the host,
+                                    then   ./lab.sh restart
+
+  Without Gazebo you can still run:  lab moveit   (RViz + fake controllers)
+                                     lab real     (the physical Lite 6)
+MSG
+        exit 3
+    fi
+}
+
+# Two stacks at once publish two /clock and two tf trees: RViz flickers and
+# nothing is reliable. Refuse to start a second one on top of the first (or of
+# what a previous one left behind).
+require_no_simulation() {
+    if pgrep -f "gz sim|parameter_bridge|robot_state_publisher|move_group" >/dev/null 2>&1; then
+        cat >&2 <<MSG
+${E}A simulation, or what an earlier one left behind, is still running.${R}
+
+  '$1' would start a second stack. Two stacks publish two clocks and two tf trees
+  and RViz flickers. Nothing was started.
+
+  Stop everything in this container:   lab kill
+  (or Ctrl+C in the terminal that runs it, and wait for it to finish)
+MSG
+        exit 4
+    fi
+}
+
+cmd_gazebo() {
+    case "${1:-status}" in
+        on|1|enable)
+            mkdir -p "$(dirname "${GAZEBO_STATE_FILE}")"
+            echo 1 > "${GAZEBO_STATE_FILE}"
+            say "Gazebo ${G}enabled${R} for this container (all terminals)."
+            ;;
+        off|0|disable)
+            mkdir -p "$(dirname "${GAZEBO_STATE_FILE}")"
+            echo 0 > "${GAZEBO_STATE_FILE}"
+            say "Gazebo ${Y}disabled${R}. 'lab sim' and 'lab gz' will refuse to start."
+            # Anything already running keeps running - stop it yourself.
+            if pgrep -x "gz" >/dev/null 2>&1 || pgrep -f "gz sim" >/dev/null 2>&1; then
+                warn "a Gazebo process is still running. Stop it with:  lab kill"
+            fi
+            ;;
+        reset)
+            rm -f "${GAZEBO_STATE_FILE}"
+            say "Gazebo switch reset; following LAB_GAZEBO=${LAB_GAZEBO:-1} from .env."
+            ;;
+        status|"")
+            if gazebo_enabled; then
+                echo "Gazebo: ${G}ON${R}"
+            else
+                echo "Gazebo: ${Y}OFF${R}"
+            fi
+            if [ -f "${GAZEBO_STATE_FILE}" ]; then
+                echo "  source: 'lab gazebo' override ($(cat "${GAZEBO_STATE_FILE}"))"
+            else
+                echo "  source: LAB_GAZEBO=${LAB_GAZEBO:-1} from .env"
+            fi
+            ;;
+        *)
+            die "usage: lab gazebo [on|off|status|reset]"
+            ;;
+    esac
+}
+
+# --- workspace ---------------------------------------------------------------
+cmd_build() {
+    cd "${HOME}/dev_ws" || die "no ~/dev_ws"
+    if [ -z "$(ls -A src 2>/dev/null)" ]; then
+        say "~/dev_ws/src is empty - nothing of yours to build."
+        say "xarm_ros2 is already built into the image at /opt/xarm_ws."
+        return 0
+    fi
+    say "building your packages in ~/dev_ws (src/ = ./src on the Mac)"
+    run colcon build --symlink-install \
+        --parallel-workers "${COLCON_JOBS:-2}" \
+        --cmake-args -DCMAKE_BUILD_TYPE=Release "$@" || return $?
+    echo
+    say "done. Open a new terminal, or run:  source ~/dev_ws/install/setup.bash"
+}
+
+cmd_clean() {
+    cd "${HOME}/dev_ws" || die "no ~/dev_ws"
+    say "removing build/ install/ log/ from ~/dev_ws (your src/ is untouched)"
+    rm -rf build install log
+}
+
+cmd_overlay_xarm() {
+    local dst="${HOME}/dev_ws/src/xarm_ros2"
+    [ -e "${dst}" ] && die "${dst} already exists"
+    say "copying the image's xarm_ros2 into your workspace so you can edit it"
+    cp -a /opt/xarm_ws/src/xarm_ros2 "${dst}"
+    say "now run:  lab build"
+    say "your copy will shadow the one in the image once it is built."
+}
+
+# --- the seven tests ---------------------------------------------------------
+cmd_test() {
+    case "${1:-}" in
+      1) say "Test 1 - ROS 2 core is alive"
+         echo "   Run the talker here, and in a SECOND terminal:  lab test 1b"
+         echo
+         run ros2 run demo_nodes_cpp talker ;;
+      1b|listener)
+         run ros2 run demo_nodes_py listener ;;
+      2) say "Test 2 - the UFACTORY packages are visible"
+         echo
+         ros2 pkg list | grep -E "xarm|uf_"
+         local n; n=$(ros2 pkg list | grep -cE "xarm|uf_")
+         echo
+         if [ "${n}" -ge 8 ]; then
+             echo "${G}PASS${R} - ${n} packages found"
+         else
+             echo "${E}FAIL${R} - only ${n} packages found (expected 8 or more)"
+             return 1
+         fi ;;
+      3) say "Test 3 - the robot model loads (RViz + fake controllers, no physics)"
+         echo "   Leave this running; Tests 4 and 5 need it."
+         echo
+         run ros2 launch xarm_moveit_config lite6_moveit_fake.launch.py ;;
+      4) say "Test 4 - the kinematic chain"
+         echo "   Needs Test 3 running in another terminal."
+         echo "   The PDF is written to ~/shared, i.e. ./shared on the Mac."
+         echo
+         cd "${HOME}/shared" || die "no ~/shared"
+         run ros2 run tf2_tools view_frames ;;
+      5) say "Test 5 - read a transform"
+         echo "   Needs Test 3 running. Drag the marker in RViz, Plan, Execute,"
+         echo "   and watch these numbers change. Record the 4x4 for two poses."
+         echo
+         run ros2 run tf2_ros tf2_echo "${2:-${DEFAULT_BASE_FRAME}}" "${3:-${DEFAULT_EEF_FRAME}}" ;;
+      6) require_gazebo "lab test 6"
+         say "Test 6 - Gazebo runs on its own"
+         echo "   First launch downloads models and compiles shaders: be patient."
+         echo
+         run gz sim "${2:-shapes.sdf}" ;;
+      7) require_gazebo "lab test 7"
+         say "Test 7 - the Lite 6 in Gazebo, under MoveIt control  ${B}(the gate)${R}"
+         echo "   Gazebo + RViz + the ros2_control bridge. Give it up to a minute."
+         echo "   In a second terminal:  lab tf"
+         echo
+         run ros2 launch xarm_moveit_config lite6_moveit_gazebo.launch.py ;;
+      all|"")
+         cat <<MSG
+The seven tests of Part 2. Run them in order, each in its own terminal
+(open one with:  ./lab.sh shell  on the Mac).
+
+  lab test 1     ROS 2 core is alive          (then 'lab test 1b' elsewhere)
+  lab test 2     UFACTORY packages visible
+  lab test 3     robot model loads in RViz    <- leave running for 4 and 5
+  lab test 4     kinematic chain -> PDF in ./shared
+  lab test 5     read a transform (tf2_echo)
+  lab test 6     Gazebo on its own            [needs Gazebo ON]
+  lab test 7     Lite 6 in Gazebo + MoveIt    [needs Gazebo ON]  <- the gate
+MSG
+         ;;
+      *) die "no such test: $1  (try: lab test)" ;;
+    esac
+}
+
+# --- launching ---------------------------------------------------------------
+cmd_moveit() {
+    say "MoveIt + RViz with fake controllers - no physics, no Gazebo load"
+    echo
+    run ros2 launch xarm_moveit_config lite6_moveit_fake.launch.py "$@"
+}
+
+cmd_sim() {
+    require_gazebo "lab sim"
+    require_no_simulation "lab sim"
+    say "Gazebo Harmonic + MoveIt + ros2_control"
+    echo
+    run ros2 launch xarm_moveit_config lite6_moveit_gazebo.launch.py "$@"
+}
+
+cmd_sim_lite() {
+    require_gazebo "lab sim-lite"
+    require_no_simulation "lab sim-lite"
+    say "Gazebo + ros2_control only: no MoveIt, no RViz (open one with:  lab rviz)"
+    echo
+    run ros2 launch xarm_gazebo lite6_beside_table_gazebo.launch.py \
+        load_controller:=true show_rviz:=false "$@"
+}
+
+# A plain RViz for the running simulation: the robot model and tf, fixed frame
+# link_base. No MoveIt, so it cannot plan or move the arm. It starts from RViz's
+# own default configuration (panels, toolbar, layout) and only changes the fixed
+# frame and adds the TF and RobotModel displays. use_sim_time because Gazebo's
+# tf is stamped with simulation time.
+cmd_rviz() {
+    local cfg="${HOME}/.ros/lab-rviz.rviz"
+    local base; base="$(ros2 pkg prefix rviz_common)/share/rviz_common/default.rviz"
+    [ -f "${base}" ] || die "RViz's default configuration not found at ${base}"
+    mkdir -p "$(dirname "${cfg}")"
+    python3 - "${base}" "${cfg}" <<'PY'
+import sys
+import yaml
+
+cfg = yaml.safe_load(open(sys.argv[1]))
+vm = cfg['Visualization Manager']
+vm['Global Options']['Fixed Frame'] = 'link_base'
+vm['Displays'] += [
+    {'Class': 'rviz_default_plugins/TF', 'Name': 'TF', 'Enabled': True,
+     'Show Names': True, 'Marker Scale': 0.15, 'Value': True},
+    {'Class': 'rviz_default_plugins/RobotModel', 'Name': 'RobotModel', 'Enabled': True,
+     'Description Source': 'Topic', 'Value': True,
+     'Description Topic': {'Value': '/robot_description', 'Depth': 5,
+                           'Durability Policy': 'Transient Local',
+                           'History Policy': 'Keep Last',
+                           'Reliability Policy': 'Reliable'}},
+]
+view = vm['Views']['Current']
+view['Distance'] = 1.3
+view['Focal Point'] = {'X': 0.1, 'Y': 0.0, 'Z': 0.2}
+yaml.safe_dump(cfg, open(sys.argv[2], 'w'), sort_keys=False)
+PY
+    say "RViz: robot model + tf in link_base (simulation time, no MoveIt)"
+    echo
+    run rviz2 -d "${cfg}" --ros-args -p use_sim_time:=true "$@"
+}
+
+cmd_gz() {
+    require_gazebo "lab gz"
+    run gz sim "${@:-shapes.sdf}"
+}
+
+cmd_real() {
+    local ip="${1:-${ROBOT_IP:-}}"
+    [ -n "${ip}" ] || die "usage: lab real <robot_ip>   (or set ROBOT_IP in .env)"
+    shift 2>/dev/null || true
+    say "connecting to the physical Lite 6 at ${ip}"
+    echo "   Reminder: nothing runs on the real robot that has not run in Gazebo."
+    echo "   Keep the emergency stop within reach. Clear of the workspace."
+    echo
+    if ! ping -c1 -W2 "${ip}" >/dev/null 2>&1; then
+        warn "${ip} does not answer ping. Check the cable, the IP on the arm's"
+        warn "base label, and that this PC is on the same 192.168.1.x subnet."
+        warn "Note: from Docker Desktop you may need network_mode: host - see README."
+    fi
+    run ros2 launch xarm_moveit_config lite6_moveit_realmove.launch.py \
+        "robot_ip:=${ip}" "$@"
+}
+
+cmd_driver() {
+    local ip="${1:-${ROBOT_IP:-}}"
+    [ -n "${ip}" ] || die "usage: lab driver <robot_ip>"
+    shift 2>/dev/null || true
+    run ros2 launch xarm_api lite6_driver.launch.py "robot_ip:=${ip}" "$@"
+}
+
+cmd_enable() {
+    say "enabling the arm (namespace is /ufactory on the Lite 6, not /xarm)"
+    echo
+    run ros2 service call /ufactory/motion_enable xarm_msgs/srv/SetInt16ById "{id: 8, data: 1}"
+    run ros2 service call /ufactory/set_mode  xarm_msgs/srv/SetInt16 "{data: 0}"
+    run ros2 service call /ufactory/set_state xarm_msgs/srv/SetInt16 "{data: 0}"
+}
+
+cmd_frames() {
+    cd "${HOME}/shared" || die "no ~/shared"
+    say "writing frames_<timestamp>.pdf to ~/shared  (= ./shared on the Mac)"
+    echo
+    run ros2 run tf2_tools view_frames
+}
+
+cmd_tf() {
+    run ros2 run tf2_ros tf2_echo "${1:-${DEFAULT_BASE_FRAME}}" "${2:-${DEFAULT_EEF_FRAME}}"
+}
+
+cmd_kill() {
+    say "stopping ros2 / gazebo processes in this container"
+    pkill -f "gz sim"        2>/dev/null
+    pkill -x  gz             2>/dev/null
+    pkill -f "ros2 launch"   2>/dev/null
+    pkill -f  rviz2          2>/dev/null
+    pkill -f  move_group     2>/dev/null
+    pkill -f  parameter_bridge 2>/dev/null   # a stale /clock publisher makes sim time jump
+    pkill -f  robot_state_publisher 2>/dev/null   # a stale tf publisher makes RViz flicker
+    pkill -f  static_transform_publisher 2>/dev/null
+    pkill -f  ruby           2>/dev/null   # gz is launched through ruby
+    sleep 1
+    say "done"
+}
+
+# --- diagnosis ---------------------------------------------------------------
+cmd_doctor() {
+    local fail=0
+    echo "${B}Environment${R}"
+    printf '  %-22s %s\n' "ROS_DISTRO"    "${ROS_DISTRO:-${E}unset${R}}"
+    printf '  %-22s %s\n' "ROS_DOMAIN_ID" "${ROS_DOMAIN_ID:-${E}unset${R}}"
+    printf '  %-22s %s\n' "RMW"           "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp (default)}"
+    printf '  %-22s %s\n' "DISPLAY"       "${DISPLAY:-${Y}<none>${R}}"
+    printf '  %-22s %s\n' "display mode"  "$(cat /tmp/.lab-display-mode 2>/dev/null || echo '?')"
+    printf '  %-22s %s\n' "LIBGL_ALWAYS_SOFTWARE" "${LIBGL_ALWAYS_SOFTWARE:-0}"
+    printf '  %-22s %s\n' "Gazebo switch" "$(gazebo_enabled && echo ON || echo OFF)"
+    echo
+
+    echo "${B}Binaries${R}"
+    for b in ros2 colcon rviz2 gz rosdep; do
+        if command -v "${b}" >/dev/null 2>&1; then
+            printf '  %-22s %s\n' "${b}" "${G}ok${R}  $(command -v "${b}")"
+        else
+            printf '  %-22s %s\n' "${b}" "${E}MISSING${R}"; fail=1
+        fi
+    done
+    if command -v gz >/dev/null 2>&1; then
+        printf '  %-22s %s\n' "gz sim --version" "$(gz sim --version 2>&1 | head -n1)"
+    fi
+    echo
+
+    echo "${B}Packages${R}"
+    local n; n=$(ros2 pkg list 2>/dev/null | grep -cE "xarm|uf_")
+    if [ "${n}" -ge 8 ]; then
+        printf '  %-22s %s\n' "xarm/uf_ packages" "${G}${n} found${R}"
+    else
+        printf '  %-22s %s\n' "xarm/uf_ packages" "${E}${n} found - expected 8+${R}"; fail=1
+    fi
+    for p in xarm_moveit_config moveit_ros_move_group ros_gz_sim gz_ros2_control; do
+        if ros2 pkg prefix "${p}" >/dev/null 2>&1; then
+            printf '  %-22s %s\n' "${p}" "${G}ok${R}"
+        else
+            printf '  %-22s %s\n' "${p}" "${E}missing${R}"; fail=1
+        fi
+    done
+    echo
+
+    echo "${B}Display${R}"
+    if [ -n "${DISPLAY:-}" ] && xdpyinfo >/dev/null 2>&1; then
+        printf '  %-22s %s\n' "X connection" "${G}ok${R} ($(xdpyinfo | awk '/dimensions:/{print $2}'))"
+        printf '  %-22s %s\n' "GL renderer" "$(glxinfo -B 2>/dev/null | awk -F': ' '/OpenGL renderer/{print $2}' || echo '?')"
+    else
+        printf '  %-22s %s\n' "X connection" "${E}no${R} - GUI apps will not open"
+        echo "     try:  DISPLAY_MODE=vnc  in .env, then  ./lab.sh restart"
+        fail=1
+    fi
+    echo
+
+    echo "${B}Workspace${R}"
+    printf '  %-22s %s\n' "underlay" "/opt/xarm_ws  $( [ -f /opt/xarm_ws/install/setup.bash ] && echo "${G}built${R}" || echo "${E}missing${R}")"
+    printf '  %-22s %s\n' "overlay"  "~/dev_ws      $( [ -f "${HOME}/dev_ws/install/setup.bash" ] && echo "${G}built${R}" || echo "(nothing built yet)")"
+    printf '  %-22s %s\n' "your src" "$(ls -1 "${HOME}/dev_ws/src" 2>/dev/null | tr '\n' ' ')"
+    echo
+
+    if [ "${fail}" = "0" ]; then
+        echo "${G}All checks passed.${R}  Start with:  lab test 1"
+    else
+        echo "${E}Some checks failed${R} - see above."
+    fi
+    return "${fail}"
+}
+
+cmd_help() {
+    cat <<'HELP'
+lab - Robotics 02000537, Lab 0 (UFACTORY Lite 6 / ROS 2 Jazzy)
+
+  TESTS
+    lab test              list the seven tests of Part 2
+    lab test <1..7>       run one of them
+    lab doctor            check the whole environment at once
+
+  LAUNCH
+    lab moveit [args]     RViz + MoveIt, fake controllers   (no Gazebo load)
+    lab sim    [args]     Gazebo + MoveIt + ros2_control    [Gazebo ON]
+    lab sim-lite [args]   Gazebo + ros2_control only          [Gazebo ON]
+    lab rviz              plain RViz (robot model + tf), for sim-lite
+    lab gz     [world]    bare Gazebo, default shapes.sdf   [Gazebo ON]
+    lab real   <ip>       the physical Lite 6 via MoveIt
+    lab driver <ip>       the physical Lite 6, driver only (no MoveIt)
+    lab enable            motion_enable + set_mode + set_state  (/ufactory)
+    lab kill              stop everything this container started
+
+  GAZEBO SWITCH
+    lab gazebo            show whether Gazebo may start
+    lab gazebo off        block it (frees the CPU for real-robot work)
+    lab gazebo on         allow it
+    lab gazebo reset      go back to LAB_GAZEBO from .env
+
+  WORKSPACE            (~/dev_ws/src is ./src on your Mac)
+    lab build [args]      colcon build your packages
+    lab clean             wipe build/ install/ log/
+    lab overlay-xarm      copy xarm_ros2 into ~/dev_ws/src so you can edit it
+
+  TRANSFORMS
+    lab tf [a] [b]        tf2_echo, default link_base -> link_eef
+    lab frames            view_frames; PDF lands in ./shared
+
+Files you put in ~/shared appear in ./shared on the Mac, and vice versa.
+HELP
+}
+
+# --- dispatch ----------------------------------------------------------------
+case "${1:-help}" in
+    test)          shift; cmd_test "$@" ;;
+    build|b)       shift; cmd_build "$@" ;;
+    clean)         shift; cmd_clean "$@" ;;
+    overlay-xarm)  shift; cmd_overlay_xarm "$@" ;;
+    moveit|fake)   shift; cmd_moveit "$@" ;;
+    sim|gazebo-sim) shift; cmd_sim "$@" ;;
+    sim-lite)      shift; cmd_sim_lite "$@" ;;
+    rviz)          shift; cmd_rviz "$@" ;;
+    gz)            shift; cmd_gz "$@" ;;
+    real)          shift; cmd_real "$@" ;;
+    driver)        shift; cmd_driver "$@" ;;
+    enable)        shift; cmd_enable "$@" ;;
+    frames)        shift; cmd_frames "$@" ;;
+    tf|echo)       shift; cmd_tf "$@" ;;
+    kill)          shift; cmd_kill "$@" ;;
+    gazebo)        shift; cmd_gazebo "$@" ;;
+    doctor|check)  shift; cmd_doctor "$@" ;;
+    help|-h|--help) cmd_help ;;
+    *)             warn "unknown command: $1"; echo; cmd_help; exit 1 ;;
+esac

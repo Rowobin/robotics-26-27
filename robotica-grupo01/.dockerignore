@@ -1,0 +1,5 @@
+# Only docker/ is needed to build the image; keep the rest out of the context
+# so `docker build` does not ship your workspace to the daemon every time.
+*
+!docker/
+!docker/**

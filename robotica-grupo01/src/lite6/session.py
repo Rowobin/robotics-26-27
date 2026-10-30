@@ -2,7 +2,7 @@ import yaml
 from xarm.wrapper import XArmAPI
 
 def safe_session():
-    with open('config/robot.yaml', 'r') as f:
+    with open('src/config/robot.yaml', 'r') as f:
         config = yaml.full_load(f)
 
     # Connect

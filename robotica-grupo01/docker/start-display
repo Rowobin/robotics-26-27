@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+###############################################################################
+# Give the container something to draw on.
+#
+#   DISPLAY_MODE=auto   use WSLg if it is there, otherwise fall back to vnc
+#                       (on macOS there is no WSLg, so this is always vnc)
+#   DISPLAY_MODE=wslg   Windows 11 + Docker Desktop only.
+#   DISPLAY_MODE=vnc    run a virtual X server inside the container and serve
+#                       it at http://localhost:6080/ . Always works.
+#   DISPLAY_MODE=x11    an X server you run yourself (XQuartz on macOS).
+#                       Defaults to host.docker.internal:0
+#   DISPLAY_MODE=none   headless. No GUI at all.
+#
+# Writes the resolved DISPLAY to /tmp/.lab-display and the mode actually used
+# to /tmp/.lab-display-mode so every `docker exec` shell picks up the same one.
+###############################################################################
+set -o pipefail
+
+MODE="${DISPLAY_MODE:-auto}"
+VNC_RESOLUTION="${VNC_RESOLUTION:-1600x900}"
+VNC_DISPLAY="${VNC_DISPLAY:-:99}"
+
+log() { echo "[display] $*"; }
+
+have_wslg() {
+    # Docker Desktop bind-mounts the host's WSLg socket dir onto /tmp/.X11-unix.
+    [ -S /tmp/.X11-unix/X0 ]
+}
+
+start_vnc() {
+    export DISPLAY="${VNC_DISPLAY}"
+
+    if pgrep -f "Xvfb ${VNC_DISPLAY}" >/dev/null 2>&1; then
+        log "VNC stack already running on ${VNC_DISPLAY}"
+        return 0
+    fi
+
+    mkdir -p "${HOME}/.ros/log"
+    local L="${HOME}/.ros/log/display.log"
+
+    log "starting Xvfb ${VNC_DISPLAY} at ${VNC_RESOLUTION}"
+    Xvfb "${VNC_DISPLAY}" -screen 0 "${VNC_RESOLUTION}x24" \
+         +extension GLX +extension RANDR +render -noreset >>"${L}" 2>&1 &
+
+    # wait for the X server to accept connections
+    for _ in $(seq 1 50); do
+        if xdpyinfo -display "${VNC_DISPLAY}" >/dev/null 2>&1; then break; fi
+        sleep 0.2
+    done
+    if ! xdpyinfo -display "${VNC_DISPLAY}" >/dev/null 2>&1; then
+        log "ERROR: Xvfb did not come up - see ${L}"
+        return 1
+    fi
+
+    # The fluxbox theme wants a wallpaper image, and no wallpaper setter is
+    # installed, so fluxbox pops up an xmessage nagging about it on every
+    # start. A do-nothing fbsetbg ahead of the real one on PATH silences it.
+    mkdir -p "${HOME}/.fluxbox/bin"
+    printf '#!/bin/sh\nexit 0\n' > "${HOME}/.fluxbox/bin/fbsetbg"
+    chmod +x "${HOME}/.fluxbox/bin/fbsetbg"
+    # Open every window maximised: in a browser tab a small RViz/Gazebo
+    # window on a big empty desktop is hard to hit and easy to drag away.
+    [ -f "${HOME}/.fluxbox/apps" ] || printf '[app] (name=.*)\n  [Maximized]\t{yes}\n[end]\n' > "${HOME}/.fluxbox/apps"
+    PATH="${HOME}/.fluxbox/bin:${PATH}" fluxbox -display "${VNC_DISPLAY}" >>"${L}" 2>&1 &
+    x11vnc -display "${VNC_DISPLAY}" -forever -shared -nopw -rfbport 5900 \
+           -noxdamage -quiet >>"${L}" 2>&1 &
+    websockify --web=/usr/share/novnc 6080 localhost:5900 >>"${L}" 2>&1 &
+
+    log "open http://localhost:6080/  (no password)"
+    return 0
+}
+
+case "${MODE}" in
+    auto)
+        if have_wslg; then
+            MODE=wslg
+        else
+            log "no WSLg socket at /tmp/.X11-unix/X0 - falling back to VNC"
+            MODE=vnc
+        fi
+        ;;
+esac
+
+case "${MODE}" in
+    wslg)
+        export DISPLAY="${DISPLAY:-:0}"
+        export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+        export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/mnt/wslg/runtime-dir}"
+        [ -S /mnt/wslg/PulseServer ] && export PULSE_SERVER=/mnt/wslg/PulseServer
+        if ! have_wslg; then
+            log "WARNING: DISPLAY_MODE=wslg but /tmp/.X11-unix/X0 is missing."
+            log "         GUI apps will fail. Try DISPLAY_MODE=vnc in .env"
+        else
+            log "using WSLg on ${DISPLAY} - windows appear on your Windows desktop"
+        fi
+        ;;
+    vnc)
+        start_vnc || exit 1
+        ;;
+    x11)
+        export DISPLAY="${DISPLAY:-host.docker.internal:0}"
+        log "using external X server on ${DISPLAY}"
+        ;;
+    none)
+        unset DISPLAY
+        log "headless (DISPLAY_MODE=none)"
+        ;;
+    *)
+        log "unknown DISPLAY_MODE='${MODE}' - expected auto|wslg|vnc|x11|none"
+        exit 1
+        ;;
+esac
+
+echo "${DISPLAY:-}" > /tmp/.lab-display
+echo "${MODE}"      > /tmp/.lab-display-mode
+chmod 0666 /tmp/.lab-display /tmp/.lab-display-mode 2>/dev/null || true
+exit 0

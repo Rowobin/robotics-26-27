@@ -1,35 +1,53 @@
 # robotics-26-27
-repository for my robotics class
 
-## Project structure
+## Set up project
 
+> [!CAUTION]
+> This workflow is intended for MacOS. It will not work on Windows or Linux.
+
+There are two possible configurations for this project: Intermediate and Advanced. This repository uses both. Start with "Intermediate" then move on to "Advanced".
+
+**Dependencies:** git, uv, docker.
+
+### Intermediate 
+
+Clone the repository, sync the uv dependencies and do a pytest run.
 ```bash
-robotica-grupo01/
-    config/robot.yaml               # ip, home, tool offset, limits, etc
-    lite6/
-        __init__.py
-        session.py                  # safe_session()
-        kinematics.py               # LW1: fk_lite6, pose_to_T, T_to_pose, workspace_sample
-        ik.py                       # LW2: ik_lite6
-        velocity.py                 # LW3: jacobian, manipulability, rrmc_step, stream
-        trajectory.py               # LW4: traj_*, slide_piece, pick_and_place
-        game.py                     # Final Challenge: game state, rules
-    scripts/                        # one script per experiment
-    tests/                          # unit tests
-    logs/
-    requirements.txt
-    README.md
+git clone <url>
+cd robotica-grupo01
+uv sync
+uv run pytest test
 ```
 
-## Setting things up with uv
+### Advanced
 
+Set "ROS_DOMAIN_ID" and "ROBOT_IP" in the .env file.
+Then, build the image:
 ```bash
-uv venv --python 3.12.0
-uv pip install xarm-python-sdk numpy scipy matplotlib pytest pyyaml lite6
+cp .env.example .env
+./lab.sh build
 ```
 
-## Runnign a script with uv
+Start docker and check for errors:
+```bash
+./lab.sh up
+./lab.sh doctor
+```
+
+Build ROS packages:
+```bash
+./lab.sh shell          
+lab build
+exit            
+```
+
+Run the firmware simulator:
+```bash
+./firmware_sim.sh
+```
+
+### Running a script
 
 ```bash
-uv run python -m scripts.[script_name]
+uv run python -m scripts.<script_name>
 ```

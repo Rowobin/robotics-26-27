@@ -1,0 +1,110 @@
+###############################################################################
+# Robotics (02000537) 2026/2027 - Lab 0, Path C (Docker)
+# UFACTORY Lite 6 . ROS 2 Jazzy Jalisco . Gazebo Harmonic
+#
+#   ./lab.sh build      build the image (once, 45-90 min)
+#   ./lab.sh up         start the container
+#   ./lab.sh shell      open a terminal in it (repeat for every "new terminal")
+#
+# macOS version (Apple Silicon or Intel). The image is built natively for your
+# CPU - arm64 on M1/M2/M3/M4 - so nothing runs under emulation.
+#
+# Settings live in .env next to this file.
+###############################################################################
+
+services:
+  lab:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        XARM_REF: ${XARM_REF:-jazzy}
+        COLCON_JOBS: ${COLCON_JOBS:-2}
+    image: robotics-lab0:jazzy
+    container_name: robotics-lab0
+    hostname: lab0
+
+    # Keeps the container alive so you can open as many terminals as the
+    # handout asks for (`./lab.sh shell`). The entrypoint sets up ROS and
+    # the display before this runs.
+    command: ["sleep", "infinity"]
+    init: true
+    stdin_open: true
+    tty: true
+
+    env_file:
+      - .env
+
+    environment:
+      # --- your student number on the lab LAN (handout, Step 7) -------------
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      # --- the Gazebo switch: 1 = may run, 0 = refuse to start --------------
+      LAB_GAZEBO: ${LAB_GAZEBO:-1}
+      # --- display: vnc | x11 | none   (vnc is the Mac default) --------------------------
+      DISPLAY_MODE: ${DISPLAY_MODE:-vnc}
+      VNC_RESOLUTION: ${VNC_RESOLUTION:-1600x900}
+      # --- rendering: Docker on macOS has no GPU passthrough, so software Mesa -----------
+      LIBGL_ALWAYS_SOFTWARE: ${LIBGL_ALWAYS_SOFTWARE:-1}
+      # --- misc -------------------------------------------------------------
+      COLCON_JOBS: ${COLCON_JOBS:-2}
+      ROBOT_IP: ${ROBOT_IP:-}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+
+    volumes:
+      # --- YOUR CODE. This is the folder you edit on your Mac. ---------------
+      #     ./src  <->  ~/dev_ws/src        (git it, back it up, it is yours)
+      - ./src:/home/ros/dev_ws/src
+
+      # --- files in and out: PDFs from view_frames, notes, screenshots ------
+      - ./shared:/home/ros/shared
+
+      # --- build artefacts stay inside Docker (fast, and no macOS file-sharing
+      #     overhead). Wiped only by `./lab.sh nuke`. ------------------------
+      - devws:/home/ros/dev_ws
+
+      # --- caches worth keeping: Gazebo Fuel models (the slow first launch),
+      #     rosdep db, ros logs, shell history ------------------------------
+      - gzcache:/home/ros/.gz
+      - roscache:/home/ros/.ros
+
+    ports:
+      # Browser display (DISPLAY_MODE=vnc) -> http://localhost:6080/
+      - "127.0.0.1:6080:6080"
+      # Raw VNC, if you prefer a real VNC client
+      - "127.0.0.1:5900:5900"
+
+    # DDS shared-memory transport is unhappy with Docker's default 64 MB.
+    shm_size: "2gb"
+
+    # RViz/Gazebo are memory-hungry under software rendering; leave headroom.
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 8192
+
+    working_dir: /home/ros/dev_ws
+
+    ###########################################################################
+    # TALKING TO THE PHYSICAL LITE 6 / TO CLASSMATES' MACHINES
+    #
+    # The default bridge network is enough to *connect out* to the control box
+    # (TCP to 192.168.1.xxx works through NAT), but ROS 2 discovery with other
+    # machines on the lab LAN needs the host's network stack. To get it:
+    #
+    #   Docker Desktop -> Settings -> Resources -> Network
+    #     -> tick "Enable host networking", Apply & restart
+    #
+    # then uncomment the next line and comment out the `ports:` block above
+    # (host networking and published ports are mutually exclusive):
+    #
+    # network_mode: host
+    ###########################################################################
+
+
+volumes:
+  devws:
+    name: robotics-lab0-devws
+  gzcache:
+    name: robotics-lab0-gzcache
+  roscache:
+    name: robotics-lab0-roscache
