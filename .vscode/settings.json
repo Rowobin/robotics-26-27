@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./robotica-grupo01/lite6"
+    ]
+}

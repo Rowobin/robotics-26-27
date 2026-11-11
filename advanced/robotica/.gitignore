@@ -1,0 +1,20 @@
+# Your machine-specific settings (ROS_DOMAIN_ID, robot IP). .env.example is
+# committed instead.
+.env
+
+# colcon output, in case you ever build outside the container
+src/**/build/
+src/**/install/
+src/**/log/
+build/
+install/
+log/
+
+# Test outputs land here; keep the folder, not the clutter.
+shared/*
+!shared/.gitkeep
+
+__pycache__/
+*.pyc
+.vscode/
+*.swp

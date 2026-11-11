@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>lite6_checkers</name>
+  <version>0.1.0</version>
+  <description>
+    The checkerboard of the Robotics (02000537) challenge, 8 x 8 squares of 30 mm, and its pieces,
+    as Gazebo models, and the node that puts them in the simulation. 2026/2027.
+  </description>
+  <maintainer email="cazevedo@ipn.pt">cazevedo</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>ament_index_python</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

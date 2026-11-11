@@ -1,0 +1,9 @@
+# Scripts that run inside the Linux container must keep LF endings, whatever
+# git's autocrlf says on Windows. A CRLF here produces the classic
+# "bad interpreter: /usr/bin/env bash^M" on container start.
+* text=auto eol=lf
+docker/*    text eol=lf
+lab.sh      text eol=lf
+Dockerfile  text eol=lf
+*.png binary
+*.pdf binary
