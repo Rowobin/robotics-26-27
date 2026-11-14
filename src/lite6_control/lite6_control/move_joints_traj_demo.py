@@ -19,7 +19,6 @@ TARGET = [0.5, 0.2, 0.6, 0.0, 0.4, 0.0]
 # How long the move takes, in seconds.
 MOVE_TIME = 3
 
-
 def main():
     rclpy.init()
     node = Node('move_joints_traj_demo')
@@ -59,7 +58,6 @@ def main():
 
     node.destroy_node()
     rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()

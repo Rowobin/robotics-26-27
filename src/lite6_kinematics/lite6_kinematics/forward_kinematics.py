@@ -98,8 +98,8 @@ def dh_table(q) -> np.ndarray:
         [0.0,  -half_pi,  0.0,    q[1] - half_pi],
         [0.200,  np.pi,   0.0,    q[2] - half_pi],
         [0.087,  half_pi, 0.2276, q[3]],
-        [0.0,   half_pi, 0.0,    q[4]],
-        [0.0,  -half_pi, 0.0615, q[5]],
+        [0.0,   half_pi,  0.0,    q[4]],
+        [0.0,  -half_pi,  0.0615, q[5]],
     ])
     
 def mdh_transform(a: float, alpha: float, d: float, theta: float) -> np.ndarray:

@@ -161,6 +161,7 @@ def inverse_kinematics(T_d, q_start, h: float = None):
             status = 'out_of_range'
     return q, status, n_iter
 
+
 # =============================================================================
 # Part B - the node
 # =============================================================================
