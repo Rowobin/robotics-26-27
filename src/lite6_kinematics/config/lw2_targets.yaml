@@ -1,0 +1,24 @@
+# LW2 poses for ik_check - PROVIDED, DO NOT EDIT.
+#
+# starts   joint configurations, in degrees, order joint1..joint6, controller
+#          zero. Before each target, ik_check commands the arm to one of them
+#          (S0 unless -p start:=Sn) and your node solves from there.
+# targets  desired poses of link_eef in link_base: x y z in millimetres, then
+#          roll pitch yaw in degrees, X-Y-Z fixed angles (the three angles
+#          UFACTORY Studio shows): R = Rz(yaw) Ry(pitch) Rx(roll).
+#
+# Run in Gazebo before the arm. Every start and every reachable target keeps the
+# end-effector frame at least 150 mm above the base mounting plane.
+starts:
+  S0: [0, 30, 60, 0, 60, 0]
+  S1: [-20, 40, 100, -80, 60, 0]
+  S2: [-20, 40, 100, 80, -60, -150]
+  S3: [140, -80, 100, 100, 70, -60]
+  S4: [140, -80, 100, -70, -70, 100]
+
+targets:
+  - {name: A, xyz_mm: [289, -222, 443], rpy_deg: [87.4, -3.1, -14.7]}
+  - {name: B, xyz_mm: [250, 100, 280],  rpy_deg: [180, 0, 30]}
+  - {name: C, xyz_mm: [200, -150, 260], rpy_deg: [165, 15, -45]}
+  - {name: D, xyz_mm: [150, 250, 320],  rpy_deg: [180, 0, 90]}
+  - {name: U, xyz_mm: [800, 0, 300],    rpy_deg: [180, 0, 0]}

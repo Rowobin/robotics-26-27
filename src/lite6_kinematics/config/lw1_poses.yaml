@@ -1,0 +1,15 @@
+# LW1 sweep for fk_check - PROVIDED, DO NOT EDIT.
+# Joint angles in degrees, order joint1..joint6, controller zero.
+# Every pose keeps the end-effector frame at least 150 mm above the base
+# mounting plane (checked against the xarm_description model). Run in Gazebo before the arm.
+poses:
+  - {name: P0_home, q_deg: [0, 0, 0, 0, 0, 0]}
+  - {name: P1,      q_deg: [0, 20, 60, 0, 40, 0]}
+  - {name: P2,      q_deg: [30, 30, 90, 0, 60, 0]}
+  - {name: P3,      q_deg: [-45, 10, 50, 30, 40, -30]}
+  - {name: P4,      q_deg: [60, 40, 110, -45, 70, 45]}
+  - {name: P5,      q_deg: [-90, 25, 80, 90, -50, 0]}
+  - {name: P6,      q_deg: [120, 15, 45, 0, 30, 90]}
+  - {name: P7,      q_deg: [-30, 50, 120, 60, 80, -60]}
+  - {name: P8,      q_deg: [0, -10, 30, 0, 40, 0]}
+  - {name: P9,      q_deg: [45, 35, 70, -90, -40, 120]}
