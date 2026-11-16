@@ -78,10 +78,10 @@ def dh_table(q) -> np.ndarray:
     |    | \theta_i          | \d_i | \alpha_{i-1} | a_{i-1} |
     | 1  | \theta_1          | d1   | 0            | 0       |
     | 2  | \theta_2 - \pi/2  | 0    | -\pi/2       | 0       |
-    | 3  | \theta_3 + \pi/2  | 0    | 0            | a3      |
-    | 4  | \theta_4          | -d4  | \pi/2        | a4      |
-    | 5  | \theta_5          | 0    | -\pi/2       | 0       |
-    | 6  | \theta_6          | -d6  | \pi/2        | 0       |
+    | 3  | \theta_3 - \pi/2  | 0    |  \pi         | a3      |
+    | 4  | \theta_4          | d4   |  \pi/2       | a4      |
+    | 5  | \theta_5          | 0    |  \pi/2       | 0       |
+    | 6  | \theta_6          | d6   | -\pi/2       | 0       |
 
     official measurements:
     d1 = 243.3 mm = 0.2433m
@@ -96,8 +96,8 @@ def dh_table(q) -> np.ndarray:
     return np.array([
         [0.0,   0.0,      0.2433, q[0]],
         [0.0,  -half_pi,  0.0,    q[1] - half_pi],
-        [0.200,  np.pi,   0.0,    q[2] - half_pi],
-        [0.087,  half_pi, 0.2276, q[3]],
+        [0.200, np.pi,    0.0,    q[2] - half_pi],
+        [0.087, half_pi,  0.2276, q[3]],
         [0.0,   half_pi,  0.0,    q[4]],
         [0.0,  -half_pi,  0.0615, q[5]],
     ])

@@ -1,5 +1,6 @@
 {
     "python.analysis.extraPaths": [
         "./robotica-grupo01/lite6"
-    ]
+    ],
+    "cmake.sourceDirectory": "/Users/rowobin/Documents/Rowobsidian/Life/Mestrado/Notes/Robótica/REPO/robotics-26-27/src/xarm_gazebo"
 }
